@@ -1,0 +1,118 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mysql-secret
+  namespace: payments
+type: Opaque
+stringData:
+  MYSQL_ROOT_PASSWORD: "rootpass"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mysql-ddl
+  namespace: payments
+data:
+  ddl.sql: |
+    CREATE DATABASE IF NOT EXISTS ecommerce;
+    USE ecommerce;
+
+    CREATE TABLE IF NOT EXISTS payments (
+        payment_id INT AUTO_INCREMENT PRIMARY KEY,
+        order_id INT NOT NULL,
+        amount DECIMAL(10,2),
+        method VARCHAR(255) NOT NULL,
+        status BOOLEAN,
+        reference VARCHAR(100) UNIQUE,
+        created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+        refunded BOOLEAN NOT NULL DEFAULT 0
+    );
+
+    -- Create application user with external access
+    CREATE USER IF NOT EXISTS 'appuser'@'%' IDENTIFIED BY 'app_password';
+    GRANT ALL PRIVILEGES ON ecommerce.* TO 'appuser'@'%';
+    FLUSH PRIVILEGES;
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mysql-pvc
+  namespace: payments
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: db
+  namespace: payments
+spec:
+  selector:
+    app: mysql
+  ports:
+    - name: mysql
+      port: 3306
+      targetPort: 3306
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql
+  namespace: payments
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      containers:
+        - name: mysql
+          image: mysql:8.0
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-secret
+                  key: MYSQL_ROOT_PASSWORD
+            - name: MYSQL_DATABASE
+              value: ecommerce
+          ports:
+            - containerPort: 3306
+          volumeMounts:
+            - name: mysql-data
+              mountPath: /var/lib/mysql
+            - name: ddl
+              mountPath: /docker-entrypoint-initdb.d/init.sql
+              subPath: init.sql
+          readinessProbe:
+            tcpSocket:
+              port: 3306
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 6
+          livenessProbe:
+            tcpSocket:
+              port: 3306
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+      volumes:
+        - name: ddl
+          configMap:
+            name: mysql-ddl
+            items:
+              - key: ddl.sql
+                path: init.sql
+        - name: mysql-data
+          persistentVolumeClaim:
+            claimName: mysql-pvc

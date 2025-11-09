@@ -1,0 +1,44 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: payments-data-loader
+  namespace: payments
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: data-loader
+          image: payment-service:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: MYSQL_HOST
+              value: mysql
+            - name: MYSQL_USER
+              value: root
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-secret
+                  key: MYSQL_ROOT_PASSWORD
+            - name: MYSQL_DB
+              value: ecommerce
+          command:
+            - sh
+            - -c
+            - |
+              # inside the container $MYSQL_PASSWORD will be available
+              # use a small wait loop to ensure MySQL is ready
+              echo "Waiting for MySQL to accept connections..."
+              COUNTER=0
+              until mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" -e "SELECT 1" >/dev/null 2>&1
+              do
+                sleep 2
+                COUNTER=$((COUNTER+1))
+                if [ "$COUNTER" -ge 60 ]; then
+                  echo "Timed out waiting for MySQL"; exit 1
+                fi
+              done
+              echo "MySQL is ready, running CSV loader"
+              python csv_loader.py --host "$MYSQL_HOST" --user "$MYSQL_USER" --password "$MYSQL_PASSWORD" --db "$MYSQL_DB" --csv /app/eci_payments.csv

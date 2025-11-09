@@ -1,0 +1,51 @@
+
+services:
+  notification-db:
+    image: postgres:15
+    container_name: notification-db
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: notificationdb
+    ports:
+      - "5433:5432"
+    networks:
+      - notification-net
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  notification-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: notification-service
+    image: notification-service:latest
+    depends_on:
+      - notification-db
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@notification-db:5432/notificationdb
+      FLASK_ENV: development
+      MAIL_SERVER: sandbox.smtp.mailtrap.io
+      MAIL_PORT: 2525
+      MAIL_USERNAME: d302a63a4256cf
+      MAIL_PASSWORD: 17316a9b8b0de8
+      MAIL_USE_TLS: "True"
+      MAIL_USE_SSL: "False"
+
+    ports:
+      - "8005:5000"
+    volumes:
+      - .:/app
+    networks:
+      - notification-net
+    command: ["./wait-for-db.sh", "notification-db", "python", "run.py"]
+
+volumes:
+  postgres_data:
+
+
+networks:
+  notification-net:
+    driver: bridge
+

@@ -1,0 +1,24 @@
+services:
+  inventory-db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: inventory_db
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5435:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d inventory_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  inventory-service:
+    build: .
+    environment:
+      DATABASE_URL: postgresql://user:password@inventory-db:5432/inventory_db
+    ports:
+      - "8002:8000"
+    depends_on:
+      inventory-db:
+        condition: service_healthy

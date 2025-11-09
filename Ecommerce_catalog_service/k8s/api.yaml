@@ -1,0 +1,76 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalog-api
+  namespace: catalog
+spec:
+  selector:
+    app: catalog-api
+  ports:
+    - port: 8002
+      targetPort: 8002
+      protocol: TCP
+      nodePort: 30002
+  type: NodePort
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog-api
+  namespace: catalog
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: catalog-api
+  template:
+    metadata:
+      labels:
+        app: catalog-api
+    spec:
+      containers:
+        - name: catalog-api
+          image: catalog-service:latest
+          command: ["uvicorn"]
+          args: ["app.main:app", "--host", "0.0.0.0", "--port", "8002", "--reload"]
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: MYSQL_HOST
+              value: db
+            - name: MYSQL_PORT
+              value: "3307"
+            - name: MYSQL_USER
+              value: root
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-secret
+                  key: MYSQL_ROOT_PASSWORD
+            - name: MYSQL_DB
+              value: ecommerce
+          ports:
+            - containerPort: 8002
+          readinessProbe:
+            httpGet:
+              path: /docs
+              port: 8002
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /docs
+              port: 8002
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 3
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+      # use image's ENTRYPOINT (docker-entrypoint.sh) which will exec uvicorn
+      # args can be specified in Dockerfile or ENTRYPOINT; kept minimal here

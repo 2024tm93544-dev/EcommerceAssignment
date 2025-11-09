@@ -1,0 +1,11 @@
+CREATE DATABASE IF NOT EXISTS ecommerce CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE ecommerce;
+
+CREATE TABLE IF NOT EXISTS catalogue (
+  product_id INT PRIMARY KEY AUTO_INCREMENT,
+  sku VARCHAR(64) NOT NULL UNIQUE,
+  name VARCHAR(255) NOT NULL,
+  category VARCHAR(100),
+  price DECIMAL(10,2),
+  is_active BOOLEAN DEFAULT TRUE
+);
