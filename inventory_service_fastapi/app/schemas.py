@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 from datetime import datetime
+from typing import Optional
 
 class InventoryBase(BaseModel):
     product_id: int
@@ -16,5 +17,12 @@ class InventoryResponse(InventoryBase):
 
 class OperationRequest(BaseModel):
     product_id: int
-    warehouse: str
     quantity: int
+
+
+# ---- New schema for Catalog → Inventory sync ----
+class InventorySync(BaseModel):
+    product_id: int
+
+    class Config:
+        orm_mode = True

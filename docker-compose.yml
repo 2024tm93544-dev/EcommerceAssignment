@@ -1,0 +1,206 @@
+version: '3.9'
+
+networks:
+  microservices-net:
+    driver: bridge
+
+volumes:
+  catalog_data:
+  payment_data:
+  inventory_data:
+  order_data:
+  shipping_data:
+  notification_data:
+
+services:
+
+  # === Catalog Service ===
+  catalog-db:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: ecommerce
+    volumes:
+      - catalog_data:/var/lib/mysql
+    networks:
+      - microservices-net
+
+  catalog-service:
+    build: ./Ecommerce_catalog_service
+    environment:
+      MYSQL_HOST: catalog-db
+      MYSQL_USER: root
+      MYSQL_PASSWORD: rootpass
+      MYSQL_DB: ecommerce
+      INVENTORY_SYNC_URL: http://inventory-service:8000/v1/inventory/sync
+    depends_on:
+      - catalog-db
+    networks:
+      - microservices-net
+    ports:
+      - "8000:8000"
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+
+  # === Payment Service ===
+  payment-db:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: ecommerce
+    volumes:
+      - payment_data:/var/lib/mysql
+    networks:
+      - microservices-net
+
+  payment-service:
+    build: ./Ecommerce_payment_service
+    environment:
+      MYSQL_HOST: payment-db
+      MYSQL_USER: root
+      MYSQL_PASSWORD: rootpass
+      MYSQL_DB: ecommerce
+    depends_on:
+      - payment-db
+    networks:
+      - microservices-net
+    ports:
+      - "8001:8001"
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001", "--reload"]
+
+  # === Inventory Service ===
+  inventory-db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: inventory_db
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+    volumes:
+      - inventory_data:/var/lib/postgresql/data
+    networks:
+      - microservices-net
+
+  inventory-service:
+    build: ./inventory_service_fastapi
+    environment:
+      DATABASE_URL: postgresql://user:password@inventory-db:5432/inventory_db
+    depends_on:
+      - inventory-db
+    networks:
+      - microservices-net
+    ports:
+      - "8002:8000"
+
+# === Order Service ===
+  order-db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: order_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: root
+    volumes:
+      - order_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d order_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - microservices-net
+
+  order-service:
+    build: ./OrderServiceRepo/OrderService
+    environment:
+      INVENTORY_SERVICE_URL: http://inventory-service:8000/v1/inventory
+      PAYMENT_SERVICE_URL: http://payment-service:8001/v1/payments
+      SHIPPING_SERVICE_URL: http://shipping-service:8004/v1/shipping
+      NOTIFICATION_SERVICE_URL: http://notification-service:8005
+      DJANGO_SETTINGS_MODULE: OrderService.settings
+      DEBUG: "True"
+      DJANGO_ALLOWED_HOSTS: "*"
+      DB_NAME: order_db
+      DB_USER: postgres
+      DB_PASSWORD: root
+      DB_HOST: order-db
+      DB_PORT: 5432
+    depends_on:
+      order-db:
+        condition: service_healthy
+      inventory-service:
+        condition: service_started
+      payment-service:
+        condition: service_started
+      shipping-service:
+        condition: service_started
+      notification-service:
+        condition: service_started
+    command: >
+      sh -c "
+        python manage.py migrate &&
+        python manage.py collectstatic --noinput &&
+        python seed_db.py &&
+        python manage.py runserver 0.0.0.0:8001
+      "
+    networks:
+      - microservices-net
+    ports:
+      - "8003:8001"
+
+  # === Shipping Service ===
+  shipping-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: shipping_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: root
+    volumes:
+      - shipping_data:/var/lib/postgresql/data
+    networks:
+      - microservices-net
+
+  shipping-service:
+    build: ./ShipppingServiceRepo
+    environment:
+      POSTGRES_DB: shipping_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: root
+      POSTGRES_HOST: shipping-db
+      POSTGRES_PORT: 5432
+      ORDER_SERVICE_URL: http://order-service:8001
+      INVENTORY_SERVICE_URL: http://inventory-service:8000
+      PAYMENT_SERVICE_URL: http://payment-service:8001
+      NOTIFICATION_SERVICE_URL: http://notification-service:8005
+    depends_on:
+      - shipping-db
+    networks:
+      - microservices-net
+    ports:
+      - "8004:8004"
+
+  # === Notification Service ===
+  notification-db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: notificationdb
+    volumes:
+      - notification_data:/var/lib/postgresql/data
+    networks:
+      - microservices-net
+
+  notification-service:
+    build: ./notification-service
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@notification-db:5432/notificationdb
+      MAIL_SERVER: sandbox.smtp.mailtrap.io
+      MAIL_PORT: 2525
+      MAIL_USERNAME: <your_mail_username>
+      MAIL_PASSWORD: <your_mail_password>
+    depends_on:
+      - notification-db
+    networks:
+      - microservices-net
+    ports:
+      - "8005:5000"
+

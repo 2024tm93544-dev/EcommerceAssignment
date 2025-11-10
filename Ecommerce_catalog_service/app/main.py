@@ -1,3 +1,4 @@
+from mysql.connector import errors as mysql_errors
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
@@ -29,13 +30,27 @@ def list_products(
 
 @app.post("/v1/products", response_model=schemas.ProductOut, status_code=201)
 def create_product(product: schemas.ProductCreate):
-    product_id = crud.create_product(product)
-    # fetch_products returns (rows, total) - pick the first row (the created product)
-    rows, total = crud.fetch_products(1, 1, None, None, None, None, product.name)
-    if not rows:
-        raise HTTPException(status_code=500, detail="Failed to fetch created product")
-    prod = rows[0]
-    return prod
+    try:
+        product_id = crud.create_product(product)
+
+        # Fetch the newly created product for response
+        rows, total = crud.fetch_products(1, 1, None, None, None, None, product.name)
+        if not rows:
+            raise HTTPException(status_code=500, detail="Failed to fetch created product")
+
+        return rows[0]
+
+    except mysql_errors.IntegrityError as e:
+        # Check if duplicate SKU
+        if "Duplicate entry" in str(e) and "sku" in str(e):
+            raise HTTPException(status_code=409, detail=f"Product with SKU '{product.sku}' already exists.")
+        # Otherwise, propagate as generic DB error
+        raise HTTPException(status_code=400, detail="Database integrity error: " + str(e))
+
+    except Exception as e:
+        # Catch-all safety net for unexpected errors
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+
 
 @app.put("/v1/products/{product_id}", response_model=schemas.ProductOut)
 def update_product(product_id: str, payload: schemas.ProductUpdate):

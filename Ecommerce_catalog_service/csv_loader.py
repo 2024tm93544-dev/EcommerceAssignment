@@ -20,7 +20,7 @@ def create_table_if_not_exists(conn):
     """Create the catalogue table if it doesn't exist, using CSV's schema (no AUTO_INCREMENT)."""
     cursor = conn.cursor()
     ddl = """
-    CREATE TABLE IF NOT EXISTS catalogue (
+    CREATE TABLE IF NOT EXISTS products (
         product_id INT PRIMARY KEY,
         sku VARCHAR(64) NOT NULL UNIQUE,
         name VARCHAR(255) NOT NULL,
@@ -32,7 +32,7 @@ def create_table_if_not_exists(conn):
     cursor.execute(ddl)
     conn.commit()
     cursor.close()
-    print("✅ Ensured table 'catalogue' exists.")
+    print("✅ Ensured table 'products' exists.")
 
 def load_csv(csv_path, conn):
     """Read the CSV and insert/update rows."""
@@ -47,7 +47,7 @@ def load_csv(csv_path, conn):
         for row in reader:
 
             sql = """
-                INSERT INTO catalogue (product_id, sku, name, category, price, is_active)
+                INSERT INTO products (product_id, sku, name, category, price, is_active)
                 VALUES (%s, %s, %s, %s, %s, %s)
                 ON DUPLICATE KEY UPDATE
                     sku=VALUES(sku),
@@ -68,10 +68,10 @@ def load_csv(csv_path, conn):
 
     conn.commit()
     cursor.close()
-    print("✅ CSV data successfully loaded into 'catalogue' table.")
+    print("✅ CSV data successfully loaded into 'products' table.")
 
 def main():
-    parser = argparse.ArgumentParser(description="Load CSV into MySQL 'catalogue' table")
+    parser = argparse.ArgumentParser(description="Load CSV into MySQL 'products' table")
     parser.add_argument("--csv", default="eci_products.csv", help="Path to CSV file")
     parser.add_argument("--host", default="127.0.0.1", help="MySQL host")
     parser.add_argument("--user", default="root", help="MySQL username")
